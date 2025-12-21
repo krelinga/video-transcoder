@@ -27,7 +27,7 @@ func run() error {
 	defer stop()
 
 	// Load configuration
-	cfg := internal.NewConfigFromEnv()
+	cfg := internal.NewServerConfigFromEnv()
 
 	// Create database pool
 	pool, err := internal.NewDBPool(ctx, cfg.Database)
@@ -59,14 +59,14 @@ func run() error {
 
 	// Configure HTTP server
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
 		Handler: httpHandler,
 	}
 
 	// Start HTTP server in goroutine
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Printf("Starting HTTP server on port %d", cfg.Server.Port)
+		log.Printf("Starting HTTP server on port %d", cfg.Port)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}

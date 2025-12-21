@@ -13,7 +13,7 @@ func TestConfig(t *testing.T) {
 	e := exam.New(t)
 	env := deep.NewEnv()
 
-	e.Run("NewConfigFromEnv", func(e exam.E) {
+	e.Run("NewServerConfigFromEnv", func(e exam.E) {
 		// Set up environment variables for the test
 		exam.SetEnv(e, internal.EnvServerPort, "80")
 		exam.SetEnv(e, internal.EnvDatabaseHost, "db-host")
@@ -23,20 +23,18 @@ func TestConfig(t *testing.T) {
 		exam.SetEnv(e, internal.EnvDatabaseName, "db-name")
 
 		tests := []struct {
-			loc exam.Loc
-			name string
-			envVarsToSet map[string]string
+			loc            exam.Loc
+			name           string
+			envVarsToSet   map[string]string
 			envVarsToClear []string
-			wantConfig *internal.Config
-			wantPanic error
-		} {
+			wantConfig     *internal.ServerConfig
+			wantPanic      error
+		}{
 			{
-				loc: exam.Here(),
+				loc:  exam.Here(),
 				name: "All environment variables set correctly",
-				wantConfig: &internal.Config{
-					Server: &internal.ServerConfig{
-						Port: 80,
-					},
+				wantConfig: &internal.ServerConfig{
+					Port: 80,
 					Database: &internal.DatabaseConfig{
 						Host:     "db-host",
 						Port:     5432,
@@ -47,46 +45,46 @@ func TestConfig(t *testing.T) {
 				},
 			},
 			{
-				loc: exam.Here(),
-				name: "Missing VT_SERVER_PORT",
+				loc:            exam.Here(),
+				name:           "Missing VT_SERVER_PORT",
 				envVarsToClear: []string{internal.EnvServerPort},
-				wantPanic: internal.ErrPanicEnvNotSet,
+				wantPanic:      internal.ErrPanicEnvNotSet,
 			},
 			{
-				loc: exam.Here(),
-				name: "Non-integer VT_SERVER_PORT",
+				loc:          exam.Here(),
+				name:         "Non-integer VT_SERVER_PORT",
 				envVarsToSet: map[string]string{internal.EnvServerPort: "not-an-int"},
-				wantPanic: internal.ErrPanicEnvNotInt,
+				wantPanic:    internal.ErrPanicEnvNotInt,
 			},
 			{
-				loc: exam.Here(),
-				name: "Missing VT_DB_HOST",
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_HOST",
 				envVarsToClear: []string{internal.EnvDatabaseHost},
-				wantPanic: internal.ErrPanicEnvNotSet,
+				wantPanic:      internal.ErrPanicEnvNotSet,
 			},
 			{
-				loc: exam.Here(),
-				name: "Non-integer VT_DB_PORT",
+				loc:          exam.Here(),
+				name:         "Non-integer VT_DB_PORT",
 				envVarsToSet: map[string]string{internal.EnvDatabasePort: "not-an-int"},
-				wantPanic: internal.ErrPanicEnvNotInt,
+				wantPanic:    internal.ErrPanicEnvNotInt,
 			},
 			{
-				loc: exam.Here(),
-				name: "Missing VT_DB_USER",
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_USER",
 				envVarsToClear: []string{internal.EnvDatabaseUser},
-				wantPanic: internal.ErrPanicEnvNotSet,
+				wantPanic:      internal.ErrPanicEnvNotSet,
 			},
 			{
-				loc: exam.Here(),
-				name: "Missing VT_DB_PASSWORD",
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_PASSWORD",
 				envVarsToClear: []string{internal.EnvDatabasePassword},
-				wantPanic: internal.ErrPanicEnvNotSet,
+				wantPanic:      internal.ErrPanicEnvNotSet,
 			},
 			{
-				loc: exam.Here(),
-				name: "Missing VT_DB_NAME",
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_NAME",
 				envVarsToClear: []string{internal.EnvDatabaseName},
-				wantPanic: internal.ErrPanicEnvNotSet,
+				wantPanic:      internal.ErrPanicEnvNotSet,
 			},
 		}
 		for _, tt := range tests {
@@ -104,10 +102,95 @@ func TestConfig(t *testing.T) {
 
 				if tt.wantPanic != nil {
 					exam.PanicWith(e, env, match.As[error](match.ErrorIs(tt.wantPanic)), func() {
-						internal.NewConfigFromEnv()
+						internal.NewServerConfigFromEnv()
 					})
 				} else {
-					gotConfig := internal.NewConfigFromEnv()
+					gotConfig := internal.NewServerConfigFromEnv()
+					exam.Equal(e, env, tt.wantConfig, gotConfig)
+				}
+			})
+		}
+	})
+
+	e.Run("NewWorkerConfigFromEnv", func(e exam.E) {
+		// Set up environment variables for the test
+		exam.SetEnv(e, internal.EnvDatabaseHost, "db-host")
+		exam.SetEnv(e, internal.EnvDatabasePort, "5432")
+		exam.SetEnv(e, internal.EnvDatabaseUser, "db-user")
+		exam.SetEnv(e, internal.EnvDatabasePassword, "db-password")
+		exam.SetEnv(e, internal.EnvDatabaseName, "db-name")
+
+		tests := []struct {
+			loc            exam.Loc
+			name           string
+			envVarsToSet   map[string]string
+			envVarsToClear []string
+			wantConfig     *internal.WorkerConfig
+			wantPanic      error
+		}{
+			{
+				loc:  exam.Here(),
+				name: "All environment variables set correctly",
+				wantConfig: &internal.WorkerConfig{
+					Database: &internal.DatabaseConfig{
+						Host:     "db-host",
+						Port:     5432,
+						User:     "db-user",
+						Password: "db-password",
+						Name:     "db-name",
+					},
+				},
+			},
+			{
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_HOST",
+				envVarsToClear: []string{internal.EnvDatabaseHost},
+				wantPanic:      internal.ErrPanicEnvNotSet,
+			},
+			{
+				loc:          exam.Here(),
+				name:         "Non-integer VT_DB_PORT",
+				envVarsToSet: map[string]string{internal.EnvDatabasePort: "not-an-int"},
+				wantPanic:    internal.ErrPanicEnvNotInt,
+			},
+			{
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_USER",
+				envVarsToClear: []string{internal.EnvDatabaseUser},
+				wantPanic:      internal.ErrPanicEnvNotSet,
+			},
+			{
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_PASSWORD",
+				envVarsToClear: []string{internal.EnvDatabasePassword},
+				wantPanic:      internal.ErrPanicEnvNotSet,
+			},
+			{
+				loc:            exam.Here(),
+				name:           "Missing VT_DB_NAME",
+				envVarsToClear: []string{internal.EnvDatabaseName},
+				wantPanic:      internal.ErrPanicEnvNotSet,
+			},
+		}
+		for _, tt := range tests {
+			e.Run(tt.name, func(e exam.E) {
+				e.Log("Running test at", tt.loc)
+
+				// Set additional environment variables for this test case
+				for k, v := range tt.envVarsToSet {
+					exam.SetEnv(e, k, v)
+				}
+				// Clear specified environment variables for this test case
+				for _, k := range tt.envVarsToClear {
+					exam.ClearEnv(e, k)
+				}
+
+				if tt.wantPanic != nil {
+					exam.PanicWith(e, env, match.As[error](match.ErrorIs(tt.wantPanic)), func() {
+						internal.NewWorkerConfigFromEnv()
+					})
+				} else {
+					gotConfig := internal.NewWorkerConfigFromEnv()
 					exam.Equal(e, env, tt.wantConfig, gotConfig)
 				}
 			})

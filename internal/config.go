@@ -21,13 +21,15 @@ const (
 	EnvDatabaseName     = "VT_DB_NAME"
 )
 
-type Config struct {
-	Server   *ServerConfig
+// ServerConfig contains configuration for the HTTP server.
+type ServerConfig struct {
+	Port     int
 	Database *DatabaseConfig
 }
 
-type ServerConfig struct {
-	Port int
+// WorkerConfig contains configuration for the worker.
+type WorkerConfig struct {
+	Database *DatabaseConfig
 }
 
 type DatabaseConfig struct {
@@ -55,11 +57,21 @@ func mustGetenvAtoi(key string) int {
 	return value
 }
 
-func NewConfigFromEnv() *Config {
-	return &Config{
-		Server: &ServerConfig{
-			Port: mustGetenvAtoi(EnvServerPort),
+func NewServerConfigFromEnv() *ServerConfig {
+	return &ServerConfig{
+		Port: mustGetenvAtoi(EnvServerPort),
+		Database: &DatabaseConfig{
+			Host:     mustGetenv(EnvDatabaseHost),
+			Port:     mustGetenvAtoi(EnvDatabasePort),
+			User:     mustGetenv(EnvDatabaseUser),
+			Password: mustGetenv(EnvDatabasePassword),
+			Name:     mustGetenv(EnvDatabaseName),
 		},
+	}
+}
+
+func NewWorkerConfigFromEnv() *WorkerConfig {
+	return &WorkerConfig{
 		Database: &DatabaseConfig{
 			Host:     mustGetenv(EnvDatabaseHost),
 			Port:     mustGetenvAtoi(EnvDatabasePort),
