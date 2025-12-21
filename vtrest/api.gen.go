@@ -17,10 +17,75 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/oapi-codegen/runtime"
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for TranscodeStatus.
+const (
+	Completed TranscodeStatus = "completed"
+	Failed    TranscodeStatus = "failed"
+	Pending   TranscodeStatus = "pending"
+	Running   TranscodeStatus = "running"
+)
+
+// Error defines model for Error.
+type Error struct {
+	// Code Error code
+	Code string `json:"code"`
+
+	// Message Human-readable error message
+	Message string `json:"message"`
+}
+
+// TranscodeJob defines model for TranscodeJob.
+type TranscodeJob struct {
+	// CreatedAt Timestamp when the job was created
+	CreatedAt time.Time `json:"createdAt"`
+
+	// DestinationPath Path for the transcoded output file
+	DestinationPath string `json:"destinationPath"`
+
+	// Error Error message if the transcode failed
+	Error *string `json:"error,omitempty"`
+
+	// Progress Transcoding progress percentage
+	Progress int `json:"progress"`
+
+	// SourcePath Path to the source video file
+	SourcePath string `json:"sourcePath"`
+
+	// Status Current status of the transcode job
+	Status TranscodeStatus `json:"status"`
+
+	// UpdatedAt Timestamp when the job was last updated
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// Uuid Unique identifier for the transcode job
+	Uuid openapi_types.UUID `json:"uuid"`
+}
+
+// TranscodeRequest defines model for TranscodeRequest.
+type TranscodeRequest struct {
+	// DestinationPath Path for the transcoded output file
+	DestinationPath string `json:"destinationPath"`
+
+	// SourcePath Path to the source video file
+	SourcePath string `json:"sourcePath"`
+
+	// Uuid Client-provided UUID for the transcode job
+	Uuid openapi_types.UUID `json:"uuid"`
+}
+
+// TranscodeStatus Current status of the transcode job
+type TranscodeStatus string
+
+// CreateTranscodeJSONRequestBody defines body for CreateTranscode for application/json ContentType.
+type CreateTranscodeJSONRequestBody = TranscodeRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -95,12 +160,17 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// GetHello request
-	GetHello(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// CreateTranscodeWithBody request with any body
+	CreateTranscodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateTranscode(ctx context.Context, body CreateTranscodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTranscodeStatus request
+	GetTranscodeStatus(ctx context.Context, uuid openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) GetHello(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHelloRequest(c.Server)
+func (c *Client) CreateTranscodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTranscodeRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +181,43 @@ func (c *Client) GetHello(ctx context.Context, reqEditors ...RequestEditorFn) (*
 	return c.Client.Do(req)
 }
 
-// NewGetHelloRequest generates requests for GetHello
-func NewGetHelloRequest(server string) (*http.Request, error) {
+func (c *Client) CreateTranscode(ctx context.Context, body CreateTranscodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTranscodeRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetTranscodeStatus(ctx context.Context, uuid openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTranscodeStatusRequest(c.Server, uuid)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewCreateTranscodeRequest calls the generic CreateTranscode builder with application/json body
+func NewCreateTranscodeRequest(server string, body CreateTranscodeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateTranscodeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateTranscodeRequestWithBody generates requests for CreateTranscode with any type of body
+func NewCreateTranscodeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -120,7 +225,43 @@ func NewGetHelloRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/hello")
+	operationPath := fmt.Sprintf("/transcodes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetTranscodeStatusRequest generates requests for GetTranscodeStatus
+func NewGetTranscodeStatusRequest(server string, uuid openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "uuid", runtime.ParamLocationPath, uuid)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/transcodes/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -181,20 +322,25 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// GetHelloWithResponse request
-	GetHelloWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHelloResponse, error)
+	// CreateTranscodeWithBodyWithResponse request with any body
+	CreateTranscodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTranscodeResponse, error)
+
+	CreateTranscodeWithResponse(ctx context.Context, body CreateTranscodeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTranscodeResponse, error)
+
+	// GetTranscodeStatusWithResponse request
+	GetTranscodeStatusWithResponse(ctx context.Context, uuid openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetTranscodeStatusResponse, error)
 }
 
-type GetHelloResponse struct {
+type CreateTranscodeResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *struct {
-		Message *string `json:"message,omitempty"`
-	}
+	JSON201      *TranscodeJob
+	JSON400      *Error
+	JSON409      *Error
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHelloResponse) Status() string {
+func (r CreateTranscodeResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -202,44 +348,129 @@ func (r GetHelloResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHelloResponse) StatusCode() int {
+func (r CreateTranscodeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-// GetHelloWithResponse request returning *GetHelloResponse
-func (c *ClientWithResponses) GetHelloWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHelloResponse, error) {
-	rsp, err := c.GetHello(ctx, reqEditors...)
+type GetTranscodeStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *TranscodeJob
+	JSON404      *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTranscodeStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTranscodeStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// CreateTranscodeWithBodyWithResponse request with arbitrary body returning *CreateTranscodeResponse
+func (c *ClientWithResponses) CreateTranscodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTranscodeResponse, error) {
+	rsp, err := c.CreateTranscodeWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHelloResponse(rsp)
+	return ParseCreateTranscodeResponse(rsp)
 }
 
-// ParseGetHelloResponse parses an HTTP response from a GetHelloWithResponse call
-func ParseGetHelloResponse(rsp *http.Response) (*GetHelloResponse, error) {
+func (c *ClientWithResponses) CreateTranscodeWithResponse(ctx context.Context, body CreateTranscodeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTranscodeResponse, error) {
+	rsp, err := c.CreateTranscode(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTranscodeResponse(rsp)
+}
+
+// GetTranscodeStatusWithResponse request returning *GetTranscodeStatusResponse
+func (c *ClientWithResponses) GetTranscodeStatusWithResponse(ctx context.Context, uuid openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetTranscodeStatusResponse, error) {
+	rsp, err := c.GetTranscodeStatus(ctx, uuid, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTranscodeStatusResponse(rsp)
+}
+
+// ParseCreateTranscodeResponse parses an HTTP response from a CreateTranscodeWithResponse call
+func ParseCreateTranscodeResponse(rsp *http.Response) (*CreateTranscodeResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHelloResponse{
+	response := &CreateTranscodeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest TranscodeJob
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTranscodeStatusResponse parses an HTTP response from a GetTranscodeStatusWithResponse call
+func ParseGetTranscodeStatusResponse(rsp *http.Response) (*GetTranscodeStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTranscodeStatusResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest struct {
-			Message *string `json:"message,omitempty"`
-		}
+		var dest TranscodeJob
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
@@ -248,9 +479,12 @@ func ParseGetHelloResponse(rsp *http.Response) (*GetHelloResponse, error) {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Say hello
-	// (GET /hello)
-	GetHello(w http.ResponseWriter, r *http.Request)
+	// Start a new transcode job
+	// (POST /transcodes)
+	CreateTranscode(w http.ResponseWriter, r *http.Request)
+	// Get transcode job status
+	// (GET /transcodes/{uuid})
+	GetTranscodeStatus(w http.ResponseWriter, r *http.Request, uuid openapi_types.UUID)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -262,11 +496,36 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
-// GetHello operation middleware
-func (siw *ServerInterfaceWrapper) GetHello(w http.ResponseWriter, r *http.Request) {
+// CreateTranscode operation middleware
+func (siw *ServerInterfaceWrapper) CreateTranscode(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetHello(w, r)
+		siw.Handler.CreateTranscode(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTranscodeStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetTranscodeStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "uuid" -------------
+	var uuid openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "uuid", r.PathValue("uuid"), &uuid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "uuid", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTranscodeStatus(w, r, uuid)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -396,34 +655,81 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc("GET "+options.BaseURL+"/hello", wrapper.GetHello)
+	m.HandleFunc("POST "+options.BaseURL+"/transcodes", wrapper.CreateTranscode)
+	m.HandleFunc("GET "+options.BaseURL+"/transcodes/{uuid}", wrapper.GetTranscodeStatus)
 
 	return m
 }
 
-type GetHelloRequestObject struct {
+type CreateTranscodeRequestObject struct {
+	Body *CreateTranscodeJSONRequestBody
 }
 
-type GetHelloResponseObject interface {
-	VisitGetHelloResponse(w http.ResponseWriter) error
+type CreateTranscodeResponseObject interface {
+	VisitCreateTranscodeResponse(w http.ResponseWriter) error
 }
 
-type GetHello200JSONResponse struct {
-	Message *string `json:"message,omitempty"`
+type CreateTranscode201JSONResponse TranscodeJob
+
+func (response CreateTranscode201JSONResponse) VisitCreateTranscodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
-func (response GetHello200JSONResponse) VisitGetHelloResponse(w http.ResponseWriter) error {
+type CreateTranscode400JSONResponse Error
+
+func (response CreateTranscode400JSONResponse) VisitCreateTranscodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTranscode409JSONResponse Error
+
+func (response CreateTranscode409JSONResponse) VisitCreateTranscodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetTranscodeStatusRequestObject struct {
+	Uuid openapi_types.UUID `json:"uuid"`
+}
+
+type GetTranscodeStatusResponseObject interface {
+	VisitGetTranscodeStatusResponse(w http.ResponseWriter) error
+}
+
+type GetTranscodeStatus200JSONResponse TranscodeJob
+
+func (response GetTranscodeStatus200JSONResponse) VisitGetTranscodeStatusResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetTranscodeStatus404JSONResponse Error
+
+func (response GetTranscodeStatus404JSONResponse) VisitGetTranscodeStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// Say hello
-	// (GET /hello)
-	GetHello(ctx context.Context, request GetHelloRequestObject) (GetHelloResponseObject, error)
+	// Start a new transcode job
+	// (POST /transcodes)
+	CreateTranscode(ctx context.Context, request CreateTranscodeRequestObject) (CreateTranscodeResponseObject, error)
+	// Get transcode job status
+	// (GET /transcodes/{uuid})
+	GetTranscodeStatus(ctx context.Context, request GetTranscodeStatusRequestObject) (GetTranscodeStatusResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -455,23 +761,56 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
-// GetHello operation middleware
-func (sh *strictHandler) GetHello(w http.ResponseWriter, r *http.Request) {
-	var request GetHelloRequestObject
+// CreateTranscode operation middleware
+func (sh *strictHandler) CreateTranscode(w http.ResponseWriter, r *http.Request) {
+	var request CreateTranscodeRequestObject
+
+	var body CreateTranscodeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetHello(ctx, request.(GetHelloRequestObject))
+		return sh.ssi.CreateTranscode(ctx, request.(CreateTranscodeRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetHello")
+		handler = middleware(handler, "CreateTranscode")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetHelloResponseObject); ok {
-		if err := validResponse.VisitGetHelloResponse(w); err != nil {
+	} else if validResponse, ok := response.(CreateTranscodeResponseObject); ok {
+		if err := validResponse.VisitCreateTranscodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTranscodeStatus operation middleware
+func (sh *strictHandler) GetTranscodeStatus(w http.ResponseWriter, r *http.Request, uuid openapi_types.UUID) {
+	var request GetTranscodeStatusRequestObject
+
+	request.Uuid = uuid
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTranscodeStatus(ctx, request.(GetTranscodeStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTranscodeStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTranscodeStatusResponseObject); ok {
+		if err := validResponse.VisitGetTranscodeStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -482,12 +821,23 @@ func (sh *strictHandler) GetHello(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/2RQwU7rMBD8Fb85R03ee5fKt56gEgcEBw6Ig3G2jSvHtrxOoYry72gdFQl68mo8s7Mz",
-	"M1w4ROgZPbHNLhUXAzR2it2YPKl78j6ql5h9r3aPezQorniCxu3PmTKv8r+bbtNhaRATBZMcNP5XqEEy",
-	"ZWAxbAdZINORyu0FT1SmHFgZVXnqoxqNxGyOhLo5G+Hue2jcUan3oEEmTjEwVZN/XSePjaFQqC4mJe9s",
-	"VbYnFqsZbAcajUwpy97iVvXVTc+gTyN9XHM3a/A/0sclCcwlu3DEsnwj8f1EtmAR6Ge258laYj5MXl2v",
-	"rUKextHkizDMZc29ypmylAv9+rumh2iNVz2dycc0Uihq5aLBlD00hlKSblsvvCFy0dtu22F5W74CAAD/",
-	"/032wvn7AQAA",
+	"H4sIAAAAAAAC/8RWTW/bOBD9KwR3j3KkZJU01S3bBl0vikU2H70EQUGLI4uB+BFy6MQI/N8XJGXHjpS0",
+	"6KboybI0nDd88+aRj7TW0mgFCh2tHqmrW5AsPp5aq214MFYbsCggvq41h/DLwdVWGBRa0SoFk/gto/DA",
+	"pOmAVnT6z5eTz9OPX89P/706vbikGcWlCR8cWqHmdJVRCc6x+UjKv7xkamKBcTbrgEBEWEdvg1y2QJz2",
+	"tgZiGLZEOCLUgnWCD/FWGbVw54UFTqtr2he8znqzidezW6gx1HdpmXIh7m89G2HDAkPgJzis/1JIcMik",
+	"IfctKIItkFs9I/fMkX4VzWijrWRIK8oZwgSFhDGOODgUioXEZwzbIVZ4SxptIwquK+ZEezQeSSO60byw",
+	"bvFYM3tSiGh2s5KGiQ74WD5j9dyCcyNk9KuFmpN1FDFga1CY+inZg5Be0mq/KDIqhUr/ig2MUAhzsAEn",
+	"dfsVKlDHmntVLAQH/SIJDhn6WPLvFhpa0d/yp5nI+4HINzK4SOGrjHrDf6D3HXNI+qXfLQDvBR+iXClx",
+	"54EIDgpFI8AOJRBgt1Fiom9NRR/UE7ND91CLW13PtsZhm55Xx+oc7jw4HI7WG4n+ySfyqAOXp++51AsB",
+	"X98dFGZPmnJUGf9DZkNYoTaoLwGOt/lDJ0DhxFgdMnFydTX9+GKnn3APDws4LotiAgfvZ5Nyn5cT9m7/",
+	"aFKWR0eHh2VZFEXxw9J4TRGvtvtiM23PNumtBYUkiY7oZnx3KnjCNTWggpXQjFqvVHoKQ9tBP1XJom6G",
+	"21llVKhGDws4OZtGUiVTbB5sKrUTt4zrVs+CyFFgJPhLDNjszJKTsynN6AKsSyn394q9IuxeG1DMCFrR",
+	"P+KrjIaDKrKQb7YY/xrtRuzkQxwrRxhRcD9eGLkX2BJG6pfEIjhIoxFUvaSxIhs7NuWb/Jud0NRzcPin",
+	"5st06CsEFStjxnSijmvzWxfKW98avttC1yO/2lUXWg/xhTNaucTHQbH/9vjhJI/Y42dU8ureyojzdQ3O",
+	"Nb7rlqGXZVG8WUXpijVSyjTdX4hdMxVw3/983JPdiUuiwla4pCPWhevYksCDcOiiOTgvJbNLWtELZBZ7",
+	"ie7ObYjb0nn+GFxkFYqcw4jazwG9VS4aQD2wBTYwhV0tfwJ8bjZh3CyTgGAdra4Hh3ULaXsvmI4IQSZ5",
+	"nWISnrxyV7vZFvvfctWbgc6LX6Rzt7nPlEX58xW2C640kkZ7xZ9p6RPgMyWuy4xxYBfjrfysa9YRDgvo",
+	"tJFRODE2XEdsRyvaIpoqz7sQ12qH1XFxXNDVzeq/AAAA//9Q/yC2CQ0AAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -1,25 +1,148 @@
 openapi: 3.0.0
 info:
-  title: Hello World API
-  description: A simple Hello World API
+  title: Video Transcoder API
+  description: API for managing video transcoding jobs
   version: 1.0.0
 servers:
   - url: http://localhost:8080
     description: Local development server
 paths:
-  /hello:
-    get:
-      summary: Say hello
-      description: Returns a hello world message
-      operationId: getHello
+  /transcodes:
+    post:
+      summary: Start a new transcode job
+      description: Creates a new video transcoding job with a client-provided UUID for idempotency
+      operationId: createTranscode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscodeRequest'
       responses:
-        '200':
-          description: Successful response
+        '201':
+          description: Transcode job created successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Hello, World!
+                $ref: '#/components/schemas/TranscodeJob'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A transcode job with this UUID already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /transcodes/{uuid}:
+    get:
+      summary: Get transcode job status
+      description: Returns the current status of a transcode job
+      operationId: getTranscodeStatus
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: The UUID of the transcode job
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transcode job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscodeJob'
+        '404':
+          description: Transcode job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    TranscodeRequest:
+      type: object
+      required:
+        - uuid
+        - sourcePath
+        - destinationPath
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Client-provided UUID for the transcode job
+          example: 550e8400-e29b-41d4-a716-446655440000
+        sourcePath:
+          type: string
+          description: Path to the source video file
+          example: /videos/input/movie.mp4
+        destinationPath:
+          type: string
+          description: Path for the transcoded output file
+          example: /videos/output/movie_720p.mp4
+    TranscodeJob:
+      type: object
+      required:
+        - uuid
+        - status
+        - sourcePath
+        - destinationPath
+        - progress
+        - createdAt
+        - updatedAt
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Unique identifier for the transcode job
+        status:
+          $ref: '#/components/schemas/TranscodeStatus'
+        sourcePath:
+          type: string
+          description: Path to the source video file
+        destinationPath:
+          type: string
+          description: Path for the transcoded output file
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Transcoding progress percentage
+        error:
+          type: string
+          description: Error message if the transcode failed
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the job was created
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the job was last updated
+    TranscodeStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - failed
+      description: Current status of the transcode job
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+          example: INVALID_REQUEST
+        message:
+          type: string
+          description: Human-readable error message
+          example: The source path is invalid
