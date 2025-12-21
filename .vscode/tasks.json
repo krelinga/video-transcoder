@@ -7,6 +7,8 @@
             "label": "Generate REST API code from OpenAPI spec",
             "type": "shell",
             "command": ".oapiscripts/go.sh",
+            "problemMatcher": [],
+            "group": "build"
         }
     ]
 }
