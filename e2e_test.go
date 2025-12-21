@@ -167,7 +167,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 	for {
 		statusResp, err := client.GetTranscodeStatusWithResponse(ctx, jobUUID)
 		if err != nil {
-			t.Fatalf("failed to get transcode status: %v", err)
+			t.Fatalf("failed to get transcode status: %v %v", err, statusResp)
 		}
 		if statusResp.JSON200 == nil {
 			t.Fatalf("expected 200 response, got status %d: %s", statusResp.StatusCode(), string(statusResp.Body))

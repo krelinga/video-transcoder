@@ -48,7 +48,10 @@ func (s *Server) CreateTranscode(ctx context.Context, request vtrest.CreateTrans
 	// Use a transaction to insert job and mapping atomically
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return vtrest.CreateTranscode500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to begin transaction: %v", err),
+		}, nil
 	}
 	defer tx.Rollback(ctx)
 
@@ -62,23 +65,35 @@ func (s *Server) CreateTranscode(ctx context.Context, request vtrest.CreateTrans
 			Message: fmt.Sprintf("A transcode job with UUID %s already exists", jobArgs.UUID),
 		}, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("failed to check existing UUID: %w", err)
+		return vtrest.CreateTranscode500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to check existing UUID: %v", err),
+		}, nil
 	}
 
 	// Insert job into River
 	insertedJob, err := s.riverClient.InsertTx(ctx, tx, jobArgs, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert river job: %w", err)
+		return vtrest.CreateTranscode500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to insert river job: %v", err),
+		}, nil
 	}
 
 	// Insert UUID to job ID mapping
 	_, err = tx.Exec(ctx, "INSERT INTO uuid_job_mapping (uuid, river_job_id) VALUES ($1, $2)", jobArgs.UUID, insertedJob.Job.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert uuid mapping: %w", err)
+		return vtrest.CreateTranscode500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to insert uuid mapping: %v", err),
+		}, nil
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+		return vtrest.CreateTranscode500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to commit transaction: %v", err),
+		}, nil
 	}
 
 	now := time.Now()
@@ -104,13 +119,19 @@ func (s *Server) GetTranscodeStatus(ctx context.Context, request vtrest.GetTrans
 			Message: fmt.Sprintf("Transcode job with UUID %s not found", request.Uuid),
 		}, nil
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to look up job mapping: %w", err)
+		return vtrest.GetTranscodeStatus500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to look up job mapping: %v", err),
+		}, nil
 	}
 
 	// Get job from River
 	job, err := s.riverClient.JobGet(ctx, riverJobID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get river job: %w", err)
+		return vtrest.GetTranscodeStatus500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to get river job: %v", err),
+		}, nil
 	}
 	if job == nil {
 		return vtrest.GetTranscodeStatus404JSONResponse{
@@ -122,7 +143,10 @@ func (s *Server) GetTranscodeStatus(ctx context.Context, request vtrest.GetTrans
 	// Parse job args for source/destination paths
 	var jobArgs internal.TranscodeJobArgs
 	if err := json.Unmarshal(job.EncodedArgs, &jobArgs); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal job args: %w", err)
+		return vtrest.GetTranscodeStatus500JSONResponse{
+			Code:    "INTERNAL_ERROR",
+			Message: fmt.Sprintf("failed to unmarshal job args: %v", err),
+		}, nil
 	}
 
 	// Parse job output for progress/error if present
@@ -130,7 +154,10 @@ func (s *Server) GetTranscodeStatus(ctx context.Context, request vtrest.GetTrans
 	jobOutput := job.Output()
 	if len(jobOutput) > 0 {
 		if err := json.Unmarshal(jobOutput, &jobStatus); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal job output: %w", err)
+			return vtrest.GetTranscodeStatus500JSONResponse{
+				Code:    "INTERNAL_ERROR",
+				Message: fmt.Sprintf("failed to unmarshal job output: %v", err),
+			}, nil
 		}
 	}
 
