@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/HEAD/configuration-schema.json
+package: vtrest
+output: api.gen.go
+generate:
+  models: true
+  client: true
+  std-http-server: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  skip-prune: true
+  prefer-skip-optional-pointer-on-container-types: true
