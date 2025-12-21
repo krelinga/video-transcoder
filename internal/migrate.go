@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -47,9 +47,9 @@ func createMigrator(pool *pgxpool.Pool) (*migrate.Migrate, error) {
 	}
 
 	dbURL := pool.Config().ConnString()
-	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, "pgx5://"+dbURL)
+	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create migrator: %w", err)
+		return nil, fmt.Errorf("failed to create migrator: %w.  Connection string: %q", err, dbURL)
 	}
 
 	return m, nil

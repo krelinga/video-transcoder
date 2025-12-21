@@ -10,7 +10,7 @@ import (
 // NewDBPool creates a new pgxpool.Pool from the given DatabaseConfig.
 func NewDBPool(ctx context.Context, cfg *DatabaseConfig) (*pgxpool.Pool, error) {
 	connString := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s",
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		cfg.User,
 		cfg.Password,
 		cfg.Host,
