@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+
+# IDE/Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+testdata/
+
+# Dev container
+.devcontainer
