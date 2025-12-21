@@ -337,6 +337,7 @@ type CreateTranscodeResponse struct {
 	JSON201      *TranscodeJob
 	JSON400      *Error
 	JSON409      *Error
+	JSON500      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -360,6 +361,7 @@ type GetTranscodeStatusResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *TranscodeJob
 	JSON404      *Error
+	JSON500      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -439,6 +441,13 @@ func ParseCreateTranscodeResponse(rsp *http.Response) (*CreateTranscodeResponse,
 		}
 		response.JSON409 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
 	}
 
 	return response, nil
@@ -471,6 +480,13 @@ func ParseGetTranscodeStatusResponse(rsp *http.Response) (*GetTranscodeStatusRes
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
 
 	}
 
@@ -696,6 +712,15 @@ func (response CreateTranscode409JSONResponse) VisitCreateTranscodeResponse(w ht
 	return json.NewEncoder(w).Encode(response)
 }
 
+type CreateTranscode500JSONResponse Error
+
+func (response CreateTranscode500JSONResponse) VisitCreateTranscodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type GetTranscodeStatusRequestObject struct {
 	Uuid openapi_types.UUID `json:"uuid"`
 }
@@ -718,6 +743,15 @@ type GetTranscodeStatus404JSONResponse Error
 func (response GetTranscodeStatus404JSONResponse) VisitGetTranscodeStatusResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetTranscodeStatus500JSONResponse Error
+
+func (response GetTranscodeStatus500JSONResponse) VisitGetTranscodeStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -821,23 +855,24 @@ func (sh *strictHandler) GetTranscodeStatus(w http.ResponseWriter, r *http.Reque
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"AAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

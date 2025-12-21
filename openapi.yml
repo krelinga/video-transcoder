@@ -37,6 +37,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /transcodes/{uuid}:
     get:
       summary: Get transcode job status
@@ -59,6 +65,12 @@ paths:
                 $ref: '#/components/schemas/TranscodeJob'
         '404':
           description: Transcode job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
           content:
             application/json:
               schema:
