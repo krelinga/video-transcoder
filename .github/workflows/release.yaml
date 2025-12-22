@@ -69,8 +69,8 @@ jobs:
           target: ${{ matrix.target }}
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/video-transcoder:${{ inputs.release_name }}-${{ matrix.tag_suffix }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/video-transcoder:latest-${{ matrix.tag_suffix }}
+            ${{ secrets.DOCKER_USERNAME }}/video-transcoder:${{ inputs.release_name }}-${{ matrix.tag_suffix }}
+            ${{ secrets.DOCKER_USERNAME }}/video-transcoder:latest-${{ matrix.tag_suffix }}
 
   create-release:
     needs: build-images
