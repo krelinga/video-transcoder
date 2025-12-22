@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Release name (semantic version, e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release name format
+        run: |
+          if [[ ! "${{ inputs.release_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: release_name must be a semantic version (e.g., v1.0.0)"
+            exit 1
+          fi
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Check tag does not exist
+        run: |
+          if git rev-parse "${{ inputs.release_name }}" >/dev/null 2>&1; then
+            echo "Error: Tag ${{ inputs.release_name }} already exists"
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Run tests
+        run: go test ./... -v
+
+  build-images:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: server
+            tag_suffix: server
+          - target: worker
+            tag_suffix: worker
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/video-transcoder:${{ inputs.release_name }}-${{ matrix.tag_suffix }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/video-transcoder:latest-${{ matrix.tag_suffix }}
+
+  create-release:
+    needs: build-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ inputs.release_name }}"
+          git push origin "${{ inputs.release_name }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_name }}
+          generate_release_notes: true
