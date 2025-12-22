@@ -88,6 +88,10 @@ jobs:
           git tag "${{ inputs.release_name }}"
           git push origin "${{ inputs.release_name }}"
 
+      - name: Export tagged version with go list -m
+        run: |
+          GOPROXY=proxy.golang.org go list -m "github.com/${{ github.repository_owner }}/$(basename ${{ github.repository }})@${{ github.event.inputs.release_name }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
