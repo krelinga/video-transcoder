@@ -208,6 +208,25 @@ func TestTranscodeEndToEnd(t *testing.T) {
 	}
 
 	t.Logf("Transcode completed successfully, output file exists at: %s", outputFile)
+
+	// Test duplicate UUID rejection - try to create another job with same UUID but different destination
+	duplicateDestPath := "/nas/media/output_duplicate.mp4"
+	duplicateResp, err := client.CreateTranscodeWithResponse(ctx, vtrest.CreateTranscodeJSONRequestBody{
+		Uuid:            jobUUID,
+		SourcePath:      sourcePath,
+		DestinationPath: duplicateDestPath,
+	})
+	if err != nil {
+		t.Fatalf("failed to send duplicate transcode request: %v", err)
+	}
+	if duplicateResp.StatusCode() != 409 {
+		t.Fatalf("expected 409 response for duplicate UUID, got status %d: %s", duplicateResp.StatusCode(), string(duplicateResp.Body))
+	}
+	if duplicateResp.JSON409 == nil {
+		t.Fatalf("expected JSON409 response body for duplicate UUID")
+	}
+	t.Logf("Duplicate UUID correctly rejected with 409: %s", duplicateResp.JSON409.Message)
+
 }
 
 // copyFile copies a file from src to dst
