@@ -173,6 +173,10 @@ func (s *Server) GetTranscodeStatus(ctx context.Context, request vtrest.GetTrans
 		jobError = &lastError
 	}
 
+	finalTime := job.CreatedAt
+	if job.FinalizedAt != nil {
+		finalTime = *job.FinalizedAt
+	}
 	return vtrest.GetTranscodeStatus200JSONResponse{
 		Uuid:            request.Uuid,
 		Status:          status,
@@ -180,8 +184,8 @@ func (s *Server) GetTranscodeStatus(ctx context.Context, request vtrest.GetTrans
 		DestinationPath: jobArgs.DestinationPath,
 		Progress:        jobStatus.Progress,
 		Error:           jobError,
-		CreatedAt:       job.CreatedAt,
-		UpdatedAt:       job.FinalizedAt.UTC(),
+		CreatedAt:       job.CreatedAt.UTC(),
+		UpdatedAt:       finalTime.UTC(),
 	}, nil
 }
 

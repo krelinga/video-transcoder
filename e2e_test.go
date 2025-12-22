@@ -58,13 +58,16 @@ func TestTranscodeEndToEnd(t *testing.T) {
 		NetworkAliases: map[string][]string{networkName: {"postgres"}},
 		WaitingFor:     wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
 	}
-	_, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	postgresContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: postgresReq,
 		Started:          true,
 	})
 	if err != nil {
 		t.Fatalf("failed to start postgres container: %v", err)
 	}
+	t.Cleanup(func() {
+		dumpContainerLogs(t, ctx, postgresContainer, "postgres")
+	})
 
 	// Common environment variables for server and worker
 	dbEnv := map[string]string{
@@ -99,6 +102,9 @@ func TestTranscodeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start server container: %v", err)
 	}
+	t.Cleanup(func() {
+		dumpContainerLogs(t, ctx, serverContainer, "server")
+	})
 
 	// Build and start worker container with volume mount
 	workerReq := testcontainers.ContainerRequest{
@@ -118,13 +124,16 @@ func TestTranscodeEndToEnd(t *testing.T) {
 		),
 		WaitingFor: wait.ForLog("Worker started, waiting for jobs..."),
 	}
-	_, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	workerContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: workerReq,
 		Started:          true,
 	})
 	if err != nil {
 		t.Fatalf("failed to start worker container: %v", err)
 	}
+	t.Cleanup(func() {
+		dumpContainerLogs(t, ctx, workerContainer, "worker")
+	})
 
 	// Get server mapped port
 	mappedPort, err := serverContainer.MappedPort(ctx, "8080")
@@ -217,4 +226,22 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+// dumpContainerLogs reads and logs all output from a container
+func dumpContainerLogs(t *testing.T, ctx context.Context, container testcontainers.Container, name string) {
+	logs, err := container.Logs(ctx)
+	if err != nil {
+		t.Logf("failed to get %s container logs: %v", name, err)
+		return
+	}
+	defer logs.Close()
+
+	logBytes, err := io.ReadAll(logs)
+	if err != nil {
+		t.Logf("failed to read %s container logs: %v", name, err)
+		return
+	}
+
+	t.Logf("=== %s container logs ===\n%s", name, string(logBytes))
 }
