@@ -46,9 +46,7 @@ jobs:
       matrix:
         include:
           - target: server
-            tag_suffix: server
           - target: worker
-            tag_suffix: worker
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -69,8 +67,8 @@ jobs:
           target: ${{ matrix.target }}
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/video-transcoder:${{ inputs.release_name }}-${{ matrix.tag_suffix }}
-            ${{ secrets.DOCKER_USERNAME }}/video-transcoder:latest-${{ matrix.tag_suffix }}
+            ${{ secrets.DOCKER_USERNAME }}/video-transcoder:${{ inputs.release_name }}-${{ matrix.target }}
+            ${{ secrets.DOCKER_USERNAME }}/video-transcoder:latest-${{ matrix.target }}
 
   create-release:
     needs: build-images
