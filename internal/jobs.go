@@ -5,11 +5,12 @@ import "github.com/google/uuid"
 // TranscodeJobArgs contains the arguments for a transcode job.
 // This is used as the River job args payload.
 type TranscodeJobArgs struct {
-	UUID            uuid.UUID `json:"uuid"`
-	SourcePath      string    `json:"sourcePath"`
-	DestinationPath string    `json:"destinationPath"`
-	WebhookURI      *string   `json:"webhookUri,omitempty"`
-	WebhookToken    []byte    `json:"webhookToken,omitempty"`
+	UUID                uuid.UUID `json:"uuid"`
+	SourcePath          string    `json:"sourcePath"`
+	DestinationPath     string    `json:"destinationPath"`
+	WebhookURI          *string   `json:"webhookUri,omitempty"`
+	WebhookToken        []byte    `json:"webhookToken,omitempty"`
+	HeartbeatWebhookURI *string   `json:"heartbeatWebhookUri,omitempty"`
 }
 
 // Kind returns the job kind identifier for River.
@@ -29,10 +30,11 @@ type TranscodeJobStatus struct {
 
 // WebhookJobArgs contains the arguments for a webhook notification job.
 type WebhookJobArgs struct {
-	URI    string              `json:"uri"`
-	Token  []byte              `json:"token,omitempty"`
-	UUID   uuid.UUID           `json:"uuid"`
-	Status *TranscodeJobStatus `json:"status,omitempty"`
+	URI         string              `json:"uri"`
+	Token       []byte              `json:"token,omitempty"`
+	UUID        uuid.UUID           `json:"uuid"`
+	Status      *TranscodeJobStatus `json:"status,omitempty"`
+	IsHeartbeat bool                `json:"isHeartbeat,omitempty"`
 }
 
 // Kind returns the job kind identifier for River.

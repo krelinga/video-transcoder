@@ -348,6 +348,105 @@ func TestTranscodeEndToEnd(t *testing.T) {
 
 		t.Logf("Webhook received successfully with correct payload")
 	})
+
+	// Sub-test: Transcode with heartbeat webhook
+	t.Run("with heartbeat webhook", func(t *testing.T) {
+		// Clear previous MockServer recordings
+		clearMockServerRecordings(t, mockServerURL)
+
+		// Set up MockServer expectation for heartbeat webhook
+		setupMockServerExpectation(t, mockServerURL, "/heartbeat")
+
+		// Create transcode job with heartbeat webhook
+		jobUUID := uuid.New()
+		sourcePath := "/nas/media/testdata_sample_640x360.mkv"
+		destPath := "/nas/media/output_heartbeat.mp4"
+		heartbeatWebhookURI := "http://mockserver:1080/heartbeat"
+		webhookToken := []byte("test-heartbeat-token")
+
+		createResp, err := client.CreateTranscodeWithResponse(ctx, vtrest.CreateTranscodeJSONRequestBody{
+			Uuid:                jobUUID,
+			SourcePath:          sourcePath,
+			DestinationPath:     destPath,
+			HeartbeatWebhookUri: &heartbeatWebhookURI,
+			WebhookToken:        webhookToken,
+		})
+		if err != nil {
+			t.Fatalf("failed to create transcode job: %v", err)
+		}
+		if createResp.JSON201 == nil {
+			t.Fatalf("expected 201 response, got status %d: %s", createResp.StatusCode(), string(createResp.Body))
+		}
+
+		t.Logf("Created transcode job with UUID: %s and heartbeat webhook URI: %s", jobUUID, heartbeatWebhookURI)
+
+		// Poll for job completion
+		var finalStatus vtrest.TranscodeStatus
+		for {
+			statusResp, err := client.GetTranscodeStatusWithResponse(ctx, jobUUID)
+			if err != nil {
+				t.Fatalf("failed to get transcode status: %v %v", err, statusResp)
+			}
+			if statusResp.JSON200 == nil {
+				t.Fatalf("expected 200 response, got status %d: %s", statusResp.StatusCode(), string(statusResp.Body))
+			}
+
+			job := statusResp.JSON200
+			t.Logf("Job status: %s, progress: %.2f%%", job.Status, job.Progress)
+
+			if job.Status == vtrest.Completed || job.Status == vtrest.Failed {
+				finalStatus = job.Status
+				if job.Error != nil {
+					t.Logf("Job error: %s", *job.Error)
+				}
+				break
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+
+		// Verify job completed successfully
+		if finalStatus != vtrest.Completed {
+			t.Fatalf("expected job to complete successfully, but got status: %s", finalStatus)
+		}
+
+		// Verify output file exists
+		outputFile := filepath.Join(tempDir, "output_heartbeat.mp4")
+		if _, err := os.Stat(outputFile); os.IsNotExist(err) {
+			t.Fatalf("output file does not exist: %s", outputFile)
+		}
+
+		t.Logf("Transcode completed successfully, output file exists at: %s", outputFile)
+
+		// Verify heartbeat webhooks were called - check for any heartbeat with progress
+		heartbeatPayloads := getAllWebhookPayloads(t, mockServerURL, "/heartbeat")
+		if len(heartbeatPayloads) == 0 {
+			t.Fatalf("no heartbeat webhooks were received")
+		}
+
+		t.Logf("Received %d heartbeat webhook(s)", len(heartbeatPayloads))
+
+		// Verify at least one heartbeat had progress info
+		foundProgress := false
+		for _, payload := range heartbeatPayloads {
+			if payload.UUID != jobUUID {
+				t.Errorf("heartbeat UUID mismatch: got %s, want %s", payload.UUID, jobUUID)
+			}
+			if !bytes.Equal(payload.Token, webhookToken) {
+				t.Errorf("heartbeat token mismatch: got %v, want %v", payload.Token, webhookToken)
+			}
+			if payload.Progress != nil {
+				foundProgress = true
+				t.Logf("Heartbeat webhook received with progress: %.2f%%", *payload.Progress)
+			}
+		}
+
+		if !foundProgress {
+			t.Errorf("expected at least one heartbeat webhook with progress, but none had progress field")
+		}
+
+		t.Logf("Heartbeat webhooks received successfully with progress updates")
+	})
 }
 
 // copyFile copies a file from src to dst
@@ -388,9 +487,10 @@ func dumpContainerLogs(t *testing.T, ctx context.Context, container testcontaine
 
 // WebhookPayload matches the payload sent by WebhookWorker
 type WebhookPayload struct {
-	Token []byte    `json:"token,omitempty"`
-	UUID  uuid.UUID `json:"uuid"`
-	Error *string   `json:"error,omitempty"`
+	Token    []byte    `json:"token,omitempty"`
+	UUID     uuid.UUID `json:"uuid"`
+	Error    *string   `json:"error,omitempty"`
+	Progress *float64  `json:"progress,omitempty"`
 }
 
 // setupMockServerExpectation configures MockServer to accept POST requests
@@ -514,4 +614,95 @@ func checkForWebhook(t *testing.T, mockServerURL, path string) (*WebhookPayload,
 	}
 
 	return &payload, true
+}
+
+// clearMockServerRecordings clears all recorded requests from MockServer
+func clearMockServerRecordings(t *testing.T, mockServerURL string) {
+	req, err := http.NewRequest(http.MethodPut, mockServerURL+"/mockserver/reset", nil)
+	if err != nil {
+		t.Logf("failed to create reset request: %v", err)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("failed to reset mockserver: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Logf("mockserver reset returned status %d: %s", resp.StatusCode, respBody)
+	}
+}
+
+// getAllWebhookPayloads retrieves all recorded webhook payloads from MockServer for a given path
+func getAllWebhookPayloads(t *testing.T, mockServerURL, path string) []*WebhookPayload {
+	reqBody := map[string]interface{}{
+		"path": path,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest(http.MethodPut, mockServerURL+"/mockserver/retrieve?type=REQUESTS", bytes.NewReader(body))
+	if err != nil {
+		t.Logf("failed to create retrieve request: %v", err)
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("failed to retrieve mockserver requests: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Logf("mockserver retrieve returned status %d: %s", resp.StatusCode, respBody)
+		return nil
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Logf("failed to read mockserver response: %v", err)
+		return nil
+	}
+
+	// MockServer returns an array of recorded requests with nested body structure
+	var requests []struct {
+		Body struct {
+			Type   string          `json:"type"`
+			Json   json.RawMessage `json:"json"`
+			String string          `json:"string"`
+		} `json:"body"`
+	}
+
+	if err := json.Unmarshal(respBody, &requests); err != nil {
+		t.Logf("failed to parse mockserver response: %v, body: %s", err, respBody)
+		return nil
+	}
+
+	var payloads []*WebhookPayload
+	for _, request := range requests {
+		bodyData := request.Body.Json
+		if len(bodyData) == 0 && request.Body.String != "" {
+			bodyData = []byte(request.Body.String)
+		}
+
+		if len(bodyData) == 0 {
+			continue
+		}
+
+		var payload WebhookPayload
+		if err := json.Unmarshal(bodyData, &payload); err != nil {
+			t.Logf("failed to parse webhook payload: %v, body: %s", err, bodyData)
+			continue
+		}
+
+		payloads = append(payloads, &payload)
+	}
+
+	return payloads
 }

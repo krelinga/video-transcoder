@@ -15,9 +15,10 @@ import (
 
 // WebhookPayload is the JSON body sent to the webhook URI.
 type WebhookPayload struct {
-	Token []byte    `json:"token,omitempty"`
-	UUID  uuid.UUID `json:"uuid"`
-	Error *string   `json:"error,omitempty"`
+	Token    []byte    `json:"token,omitempty"`
+	UUID     uuid.UUID `json:"uuid"`
+	Error    *string   `json:"error,omitempty"`
+	Progress *float64  `json:"progress,omitempty"`
 }
 
 // WebhookWorker handles webhook notification jobs.
@@ -34,6 +35,9 @@ func (w *WebhookWorker) Work(ctx context.Context, job *river.Job[internal.Webhoo
 	}
 	if job.Args.Status != nil {
 		payload.Error = job.Args.Status.Error
+		if job.Args.IsHeartbeat {
+			payload.Progress = &job.Args.Status.Progress
+		}
 	}
 
 	body, err := json.Marshal(payload)

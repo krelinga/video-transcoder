@@ -40,11 +40,12 @@ func (s *Server) CreateTranscode(ctx context.Context, request vtrest.CreateTrans
 	}
 
 	jobArgs := internal.TranscodeJobArgs{
-		UUID:            uuid.UUID(request.Body.Uuid),
-		SourcePath:      request.Body.SourcePath,
-		DestinationPath: request.Body.DestinationPath,
-		WebhookURI:      request.Body.WebhookUri,
-		WebhookToken:    request.Body.WebhookToken,
+		UUID:                uuid.UUID(request.Body.Uuid),
+		SourcePath:          request.Body.SourcePath,
+		DestinationPath:     request.Body.DestinationPath,
+		WebhookURI:          request.Body.WebhookUri,
+		WebhookToken:        request.Body.WebhookToken,
+		HeartbeatWebhookURI: request.Body.HeartbeatWebhookUri,
 	}
 
 	// Use a transaction to insert job and mapping atomically
