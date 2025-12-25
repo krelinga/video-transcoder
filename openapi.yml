@@ -130,7 +130,8 @@ components:
           type: string
           description: Path for the transcoded output file
         progress:
-          type: integer
+          type: number
+          format: double
           minimum: 0
           maximum: 100
           description: Transcoding progress percentage

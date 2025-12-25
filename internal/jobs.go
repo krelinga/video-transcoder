@@ -22,7 +22,7 @@ func (TranscodeJobArgs) Kind() string {
 // read by both server and worker.
 type TranscodeJobStatus struct {
 	// Progress is the transcoding progress percentage (0-100).
-	Progress int `json:"progress"`
+	Progress float64 `json:"progress"`
 	// Error contains an error message if the job failed.
 	Error *string `json:"error,omitempty"`
 }

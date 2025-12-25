@@ -53,7 +53,7 @@ func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.Tran
 
 	// Track progress updates
 	lastUpdateTime := time.Now()
-	lastProgress := 0
+	lastProgress := 0.0
 	updateInterval := 30 * time.Second
 
 	// Parse JSON progress from stderr
@@ -68,7 +68,7 @@ func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.Tran
 		}
 
 		if progress.State == "WORKING" {
-			currentProgress := int(progress.Progress * 100)
+			currentProgress := progress.Progress * 100
 
 			// Update progress every 30 seconds or if progress changed significantly
 			if time.Since(lastUpdateTime) >= updateInterval || currentProgress != lastProgress {
@@ -108,7 +108,7 @@ func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.Tran
 
 	// Record final success status
 	status := internal.TranscodeJobStatus{
-		Progress: 100,
+		Progress: 100.0,
 	}
 	if err := river.RecordOutput(ctx, status); err != nil {
 		// Log but don't fail the job on final progress update error

@@ -218,7 +218,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 			}
 
 			job := statusResp.JSON200
-			t.Logf("Job status: %s, progress: %d%%", job.Status, job.Progress)
+			t.Logf("Job status: %s, progress: %.2f%%", job.Status, job.Progress)
 
 			if job.Status == vtrest.Completed || job.Status == vtrest.Failed {
 				finalStatus = job.Status
@@ -303,7 +303,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 			}
 
 			job := statusResp.JSON200
-			t.Logf("Job status: %s, progress: %d%%", job.Status, job.Progress)
+			t.Logf("Job status: %s, progress: %.2f%%", job.Status, job.Progress)
 
 			if job.Status == vtrest.Completed || job.Status == vtrest.Failed {
 				finalStatus = job.Status
