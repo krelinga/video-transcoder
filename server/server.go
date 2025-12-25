@@ -43,6 +43,8 @@ func (s *Server) CreateTranscode(ctx context.Context, request vtrest.CreateTrans
 		UUID:            uuid.UUID(request.Body.Uuid),
 		SourcePath:      request.Body.SourcePath,
 		DestinationPath: request.Body.DestinationPath,
+		WebhookURI:      request.Body.WebhookUri,
+		WebhookToken:    request.Body.WebhookToken,
 	}
 
 	// Use a transaction to insert job and mapping atomically

@@ -97,6 +97,15 @@ components:
           type: string
           description: Path for the transcoded output file
           example: /videos/output/movie_720p.mp4
+        webhookUri:
+          type: string
+          format: uri
+          description: Optional URI to POST webhook notification when job completes
+          example: https://example.com/webhook
+        webhookToken:
+          type: string
+          format: byte
+          description: Optional opaque token to include in webhook payload for authentication
     TranscodeJob:
       type: object
       required:

@@ -8,6 +8,8 @@ type TranscodeJobArgs struct {
 	UUID            uuid.UUID `json:"uuid"`
 	SourcePath      string    `json:"sourcePath"`
 	DestinationPath string    `json:"destinationPath"`
+	WebhookURI      *string   `json:"webhookUri,omitempty"`
+	WebhookToken    []byte    `json:"webhookToken,omitempty"`
 }
 
 // Kind returns the job kind identifier for River.
@@ -23,4 +25,17 @@ type TranscodeJobStatus struct {
 	Progress int `json:"progress"`
 	// Error contains an error message if the job failed.
 	Error *string `json:"error,omitempty"`
+}
+
+// WebhookJobArgs contains the arguments for a webhook notification job.
+type WebhookJobArgs struct {
+	URI    string              `json:"uri"`
+	Token  []byte              `json:"token,omitempty"`
+	UUID   uuid.UUID           `json:"uuid"`
+	Status *TranscodeJobStatus `json:"status,omitempty"`
+}
+
+// Kind returns the job kind identifier for River.
+func (WebhookJobArgs) Kind() string {
+	return "webhook"
 }
