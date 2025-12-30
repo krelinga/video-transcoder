@@ -32,9 +32,9 @@ FROM debian:bookworm-slim AS worker
 
 WORKDIR /app
 
-# Install HandBrake CLI and clean up apt cache
+# Install HandBrake CLI & FFmpeg and clean up apt cache
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends handbrake-cli && \
+    apt-get install -y --no-install-recommends handbrake-cli ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
