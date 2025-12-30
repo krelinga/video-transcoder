@@ -39,6 +39,14 @@ func (s *Server) CreateTranscode(ctx context.Context, request vtrest.CreateTrans
 		}, nil
 	}
 
+	profile := internal.Profile(request.Body.Profile)
+	if !profile.IsValid() {
+		return vtrest.CreateTranscode400JSONResponse{
+			Code:    "INVALID_PROFILE",
+			Message: fmt.Sprintf("Invalid profile: %q", request.Body.Profile),
+		}, nil
+	}
+
 	jobArgs := internal.TranscodeJobArgs{
 		UUID:                uuid.UUID(request.Body.Uuid),
 		SourcePath:          request.Body.SourcePath,

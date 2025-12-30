@@ -196,6 +196,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 			Uuid:            jobUUID,
 			SourcePath:      sourcePath,
 			DestinationPath: destPath,
+			Profile:         "preview",
 		})
 		if err != nil {
 			t.Fatalf("failed to create transcode job: %v", err)
@@ -250,6 +251,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 			Uuid:            jobUUID,
 			SourcePath:      sourcePath,
 			DestinationPath: duplicateDestPath,
+			Profile:         "preview",
 		})
 		if err != nil {
 			t.Fatalf("failed to send duplicate transcode request: %v", err)
@@ -279,6 +281,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 			Uuid:            jobUUID,
 			SourcePath:      sourcePath,
 			DestinationPath: destPath,
+			Profile:         "preview",
 			WebhookUri:      &webhookURI,
 			WebhookToken:    webhookToken,
 		})
@@ -368,6 +371,7 @@ func TestTranscodeEndToEnd(t *testing.T) {
 			Uuid:                jobUUID,
 			SourcePath:          sourcePath,
 			DestinationPath:     destPath,
+			Profile:             "preview",
 			HeartbeatWebhookUri: &heartbeatWebhookURI,
 			WebhookToken:        webhookToken,
 		})

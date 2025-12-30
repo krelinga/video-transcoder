@@ -83,6 +83,7 @@ components:
         - uuid
         - sourcePath
         - destinationPath
+        - profile
       properties:
         uuid:
           type: string
@@ -97,6 +98,10 @@ components:
           type: string
           description: Path for the transcoded output file
           example: /videos/output/movie_720p.mp4
+        profile:
+          type: string
+          description: Transcoding profile to use.
+          example: preview
         webhookUri:
           type: string
           format: uri
@@ -118,6 +123,7 @@ components:
         - status
         - sourcePath
         - destinationPath
+        - profile
         - progress
         - createdAt
         - updatedAt
@@ -134,6 +140,10 @@ components:
         destinationPath:
           type: string
           description: Path for the transcoded output file
+        profile:
+          type: string
+          description: Transcoding profile used
+          example: preview
         progress:
           type: number
           format: double

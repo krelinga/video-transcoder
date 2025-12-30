@@ -8,6 +8,7 @@ type TranscodeJobArgs struct {
 	UUID                uuid.UUID `json:"uuid"`
 	SourcePath          string    `json:"sourcePath"`
 	DestinationPath     string    `json:"destinationPath"`
+	Profile             Profile    `json:"profile"`
 	WebhookURI          *string   `json:"webhookUri,omitempty"`
 	WebhookToken        []byte    `json:"webhookToken,omitempty"`
 	HeartbeatWebhookURI *string   `json:"heartbeatWebhookUri,omitempty"`
