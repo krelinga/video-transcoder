@@ -51,6 +51,7 @@ func (s *Server) CreateTranscode(ctx context.Context, request vtrest.CreateTrans
 		UUID:                uuid.UUID(request.Body.Uuid),
 		SourcePath:          request.Body.SourcePath,
 		DestinationPath:     request.Body.DestinationPath,
+		Profile:             profile,
 		WebhookURI:          request.Body.WebhookUri,
 		WebhookToken:        request.Body.WebhookToken,
 		HeartbeatWebhookURI: request.Body.HeartbeatWebhookUri,
