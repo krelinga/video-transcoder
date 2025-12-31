@@ -112,83 +112,101 @@ func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.Tran
 
 // enqueueWebhook inserts a webhook job in the same transaction that completes this job.
 func (w *TranscodeWorker) enqueueWebhook(ctx context.Context, job *river.Job[internal.TranscodeJobArgs], status *internal.TranscodeJobStatus) error {
-	webhookArgs := internal.WebhookJobArgs{
-		URI:    *job.Args.WebhookURI,
-		Token:  job.Args.WebhookToken,
-		UUID:   job.Args.UUID,
-		Status: status,
-	}
+	impl := func() error {
+		webhookArgs := internal.WebhookJobArgs{
+			URI:    *job.Args.WebhookURI,
+			Token:  job.Args.WebhookToken,
+			UUID:   job.Args.UUID,
+			Status: status,
+		}
 
-	// Start a transaction to insert webhook job and complete transcode job atomically
-	tx, err := w.DBPool.Begin(ctx)
+		// Start a transaction to insert webhook job and complete transcode job atomically
+		tx, err := w.DBPool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer tx.Rollback(ctx)
+
+		// Get River client from context
+		client := river.ClientFromContext[pgx.Tx](ctx)
+		if client == nil {
+			return fmt.Errorf("no river client in context for webhook job insertion")
+		}
+
+		// Insert webhook job within transaction
+		if _, err := client.InsertTx(ctx, tx, webhookArgs, nil); err != nil {
+			return fmt.Errorf("failed to enqueue webhook job: %w", err)
+		}
+
+		// Complete the current job within the same transaction
+		if _, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job); err != nil {
+			return fmt.Errorf("failed to complete job in transaction: %w", err)
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		return nil
+	}
+	err := impl()
+	errString := "OK"
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		errString = err.Error()
 	}
-	defer tx.Rollback(ctx)
-
-	// Get River client from context
-	client := river.ClientFromContext[pgx.Tx](ctx)
-	if client == nil {
-		return fmt.Errorf("no river client in context for webhook job insertion")
-	}
-
-	// Insert webhook job within transaction
-	if _, err := client.InsertTx(ctx, tx, webhookArgs, nil); err != nil {
-		return fmt.Errorf("failed to enqueue webhook job: %w", err)
-	}
-
-	// Complete the current job within the same transaction
-	if _, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job); err != nil {
-		return fmt.Errorf("failed to complete job in transaction: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+	log.Printf("Webhook enqueue for URI: %s, uuid: %s, status %v, error: %s", *job.Args.WebhookURI, job.Args.UUID, status, errString)
+	return err
 }
 
 // enqueueHeartbeatWebhook inserts a heartbeat webhook job atomically with updating the job output.
 // Unlike completion webhooks, heartbeat webhooks use MaxAttempts=1 (no retries) since
 // another progress update will follow shortly.
 func (w *TranscodeWorker) enqueueHeartbeatWebhook(ctx context.Context, job *river.Job[internal.TranscodeJobArgs], status *internal.TranscodeJobStatus) error {
-	webhookArgs := internal.WebhookJobArgs{
-		URI:         *job.Args.HeartbeatWebhookURI,
-		Token:       job.Args.WebhookToken,
-		UUID:        job.Args.UUID,
-		Status:      status,
-		IsHeartbeat: true,
-	}
+	impl := func() error {
+		webhookArgs := internal.WebhookJobArgs{
+			URI:         *job.Args.HeartbeatWebhookURI,
+			Token:       job.Args.WebhookToken,
+			UUID:        job.Args.UUID,
+			Status:      status,
+			IsHeartbeat: true,
+		}
 
-	// Start a transaction to insert webhook job and update job output atomically
-	tx, err := w.DBPool.Begin(ctx)
+		// Start a transaction to insert webhook job and update job output atomically
+		tx, err := w.DBPool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer tx.Rollback(ctx)
+
+		// Get River client from context
+		client := river.ClientFromContext[pgx.Tx](ctx)
+		if client == nil {
+			return fmt.Errorf("no river client in context for heartbeat webhook job insertion")
+		}
+
+		// Insert webhook job within transaction with no retries
+		insertOpts := &river.InsertOpts{MaxAttempts: 1}
+		if _, err := client.InsertTx(ctx, tx, webhookArgs, insertOpts); err != nil {
+			return fmt.Errorf("failed to enqueue heartbeat webhook job: %w", err)
+		}
+
+		// Update the current job's output within the same transaction
+		outputParams := &river.JobUpdateParams{Output: status}
+		if _, err := client.JobUpdateTx(ctx, tx, job.ID, outputParams); err != nil {
+			return fmt.Errorf("failed to update job output in transaction: %w", err)
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		return nil
+	}
+	err := impl()
+	errString := "OK"
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		errString = err.Error()
 	}
-	defer tx.Rollback(ctx)
-
-	// Get River client from context
-	client := river.ClientFromContext[pgx.Tx](ctx)
-	if client == nil {
-		return fmt.Errorf("no river client in context for heartbeat webhook job insertion")
-	}
-
-	// Insert webhook job within transaction with no retries
-	insertOpts := &river.InsertOpts{MaxAttempts: 1}
-	if _, err := client.InsertTx(ctx, tx, webhookArgs, insertOpts); err != nil {
-		return fmt.Errorf("failed to enqueue heartbeat webhook job: %w", err)
-	}
-
-	// Update the current job's output within the same transaction
-	outputParams := &river.JobUpdateParams{Output: status}
-	if _, err := client.JobUpdateTx(ctx, tx, job.ID, outputParams); err != nil {
-		return fmt.Errorf("failed to update job output in transaction: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+	log.Printf("Heartbeat webhook enqueue for URI: %s, uuid: %s, status %v, error: %s", *job.Args.HeartbeatWebhookURI, job.Args.UUID, status, errString)
+	return err
 }

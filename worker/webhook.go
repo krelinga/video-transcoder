@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -29,42 +30,51 @@ type WebhookWorker struct {
 
 // Work sends a POST request to the configured webhook URI.
 func (w *WebhookWorker) Work(ctx context.Context, job *river.Job[internal.WebhookJobArgs]) error {
-	payload := WebhookPayload{
-		Token: job.Args.Token,
-		UUID:  job.Args.UUID,
-	}
-	if job.Args.Status != nil {
-		payload.Error = job.Args.Status.Error
-		if job.Args.IsHeartbeat {
-			payload.Progress = &job.Args.Status.Progress
+	impl := func() error {
+		payload := WebhookPayload{
+			Token: job.Args.Token,
+			UUID:  job.Args.UUID,
 		}
-	}
+		if job.Args.Status != nil {
+			payload.Error = job.Args.Status.Error
+			if job.Args.IsHeartbeat {
+				payload.Progress = &job.Args.Status.Progress
+			}
+		}
 
-	body, err := json.Marshal(payload)
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal webhook payload: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, job.Args.URI, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("failed to create webhook request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := w.HTTPClient
+		if client == nil {
+			client = &http.Client{Timeout: 30 * time.Second}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send webhook request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("webhook request failed with status %d", resp.StatusCode)
+		}
+
+		return nil
+	}
+	err := impl()
+	errString := "OK"
 	if err != nil {
-		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+		errString = err.Error()
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, job.Args.URI, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create webhook request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := w.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send webhook request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook request failed with status %d", resp.StatusCode)
-	}
-
-	return nil
+	log.Printf("Webhook send for URI: %s, uuid: %s, status %v, error: %s", job.Args.URI, job.Args.UUID, job.Args.Status, errString)
+	return err
 }
