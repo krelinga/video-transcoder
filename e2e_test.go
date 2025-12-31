@@ -209,7 +209,12 @@ func TestTranscodeEndToEnd(t *testing.T) {
 
 		// Poll for job completion
 		var finalStatus vtrest.TranscodeStatus
+		deadline := time.Now().Add(30 * time.Second)
 		for {
+			if time.Now().After(deadline) {
+				t.Fatalf("timeout waiting for transcode to complete after 30 seconds")
+			}
+
 			statusResp, err := client.GetTranscodeStatusWithResponse(ctx, jobUUID)
 			if err != nil {
 				t.Fatalf("failed to get transcode status: %v %v", err, statusResp)
@@ -296,7 +301,12 @@ func TestTranscodeEndToEnd(t *testing.T) {
 
 		// Poll for job completion
 		var finalStatus vtrest.TranscodeStatus
+		deadline := time.Now().Add(30 * time.Second)
 		for {
+			if time.Now().After(deadline) {
+				t.Fatalf("timeout waiting for transcode to complete after 30 seconds")
+			}
+
 			statusResp, err := client.GetTranscodeStatusWithResponse(ctx, jobUUID)
 			if err != nil {
 				t.Fatalf("failed to get transcode status: %v %v", err, statusResp)
@@ -386,7 +396,12 @@ func TestTranscodeEndToEnd(t *testing.T) {
 
 		// Poll for job completion
 		var finalStatus vtrest.TranscodeStatus
+		deadline := time.Now().Add(30 * time.Second)
 		for {
+			if time.Now().After(deadline) {
+				t.Fatalf("timeout waiting for transcode to complete after 30 seconds")
+			}
+
 			statusResp, err := client.GetTranscodeStatusWithResponse(ctx, jobUUID)
 			if err != nil {
 				t.Fatalf("failed to get transcode status: %v %v", err, statusResp)
