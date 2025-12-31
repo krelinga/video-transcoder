@@ -15,15 +15,3 @@ func (p Profile) IsValid() bool {
 	}
 }
 
-type ProfileSwitch struct {
-	Preview func() error
-}
-
-func (ps ProfileSwitch) Switch(p Profile) error {
-	switch p {
-	case ProfilePreview:
-		return ps.Preview()
-	default:
-		panic(ErrPanicInvalidProfile)
-	}
-}
