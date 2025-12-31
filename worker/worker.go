@@ -1,13 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,127 +13,65 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 )
 
-// TranscodeWorker handles video transcoding jobs using HandBrake.
+// TranscodeWorker handles video transcoding jobs.
 type TranscodeWorker struct {
 	river.WorkerDefaults[internal.TranscodeJobArgs]
 	DBPool *pgxpool.Pool
 }
 
-// handbrakeProgress represents the JSON progress output from HandBrake.
-type handbrakeProgress struct {
-	State   string `json:"State"`
-	Working struct {
-		Progress float64 `json:"Progress"`
-	} `json:"Working"`
-}
-
-// Work executes the transcoding job using HandBrake CLI.
+// Work executes the transcoding job using the appropriate transcoder.
 func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.TranscodeJobArgs]) error {
 	args := job.Args
 
-	// Build HandBrake command
-	cmd := exec.CommandContext(ctx,
-		"HandBrakeCLI",
-		"-i", args.SourcePath,
-		"-o", args.DestinationPath,
-		"--json",
-		"--preset", "Fast 1080p30",
-	)
+	transcoder := internal.NewTranscoder(args.Profile)
 
-	// Get stdout pipe for JSON progress output (--json flag outputs to stdout)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start HandBrake: %w", err)
-	}
-
-	// Track progress updates
+	// Track progress updates for throttling
 	lastUpdateTime := time.Now()
 	lastProgress := 0.0
 	updateInterval := 30 * time.Second
 	firstHeartbeatSent := false
 
-	// Parse JSON progress from stdout
-	// HandBrake outputs JSON with labels like "Progress: {..." spanning multiple lines
-	scanner := bufio.NewScanner(stdout)
-	var jsonBuffer strings.Builder
-	inProgressBlock := false
-	braceCount := 0
+	progressCallback := func(currentProgress float64) {
+		// Determine if we should send an update:
+		// - For heartbeat webhooks: always send the first one immediately, then every 30 seconds
+		// - For regular progress: every 30 seconds or on progress change
+		shouldUpdate := time.Since(lastUpdateTime) >= updateInterval
+		needsFirstHeartbeat := args.HeartbeatWebhookURI != nil && !firstHeartbeatSent
 
-	for scanner.Scan() {
-		line := scanner.Text()
+		if shouldUpdate || needsFirstHeartbeat {
+			status := internal.TranscodeJobStatus{
+				Progress: currentProgress,
+			}
 
-		// Check if this line starts a Progress block
-		if strings.HasPrefix(line, "Progress:") {
-			inProgressBlock = true
-			jsonBuffer.Reset()
-			braceCount = 0
-			// Extract the JSON part after "Progress:"
-			jsonPart := strings.TrimPrefix(line, "Progress:")
-			jsonPart = strings.TrimSpace(jsonPart)
-			jsonBuffer.WriteString(jsonPart)
-			braceCount += strings.Count(jsonPart, "{") - strings.Count(jsonPart, "}")
-			continue
-		}
-
-		if inProgressBlock {
-			jsonBuffer.WriteString(line)
-			braceCount += strings.Count(line, "{") - strings.Count(line, "}")
-
-			// If braces are balanced, we have a complete JSON object
-			if braceCount == 0 {
-				inProgressBlock = false
-				jsonStr := jsonBuffer.String()
-
-				var progress handbrakeProgress
-				if err := json.Unmarshal([]byte(jsonStr), &progress); err != nil {
-					continue
+			// If heartbeat webhook is configured, enqueue it atomically with job output update
+			if args.HeartbeatWebhookURI != nil {
+				if err := w.enqueueHeartbeatWebhook(ctx, job, &status); err != nil {
+					// Log but don't fail the job on heartbeat webhook errors
+					log.Printf("failed to enqueue heartbeat webhook: %v", err)
+				} else {
+					firstHeartbeatSent = true
 				}
-
-				if progress.State == "WORKING" {
-					currentProgress := progress.Working.Progress * 100
-
-					// Determine if we should send an update:
-					// - For heartbeat webhooks: always send the first one immediately, then every 30 seconds
-					// - For regular progress: every 30 seconds or on progress change
-					shouldUpdate := time.Since(lastUpdateTime) >= updateInterval
-					needsFirstHeartbeat := args.HeartbeatWebhookURI != nil && !firstHeartbeatSent
-
-					if shouldUpdate || needsFirstHeartbeat {
-						status := internal.TranscodeJobStatus{
-							Progress: currentProgress,
-						}
-
-						// If heartbeat webhook is configured, enqueue it atomically with job output update
-						if args.HeartbeatWebhookURI != nil {
-							if err := w.enqueueHeartbeatWebhook(ctx, job, &status); err != nil {
-								// Log but don't fail the job on heartbeat webhook errors
-								log.Printf("failed to enqueue heartbeat webhook: %v", err)
-							} else {
-								firstHeartbeatSent = true
-							}
-						} else {
-							// No heartbeat webhook, just record output
-							if err := river.RecordOutput(ctx, status); err != nil {
-								// Log but don't fail the job on progress update errors
-								continue
-							}
-						}
-						lastUpdateTime = time.Now()
-						lastProgress = currentProgress
-					}
+			} else {
+				// No heartbeat webhook, just record output
+				if err := river.RecordOutput(ctx, status); err != nil {
+					// Log but don't fail the job on progress update errors
+					log.Printf("failed to record output: %v", err)
+					return
 				}
 			}
+			lastUpdateTime = time.Now()
+			lastProgress = currentProgress
 		}
 	}
 
-	// Wait for command to complete
-	if err := cmd.Wait(); err != nil {
-		errMsg := fmt.Sprintf("HandBrake failed: %v", err)
+	params := internal.TranscodeParams{
+		SourcePath:       args.SourcePath,
+		DestinationPath:  args.DestinationPath,
+		ProgressCallback: progressCallback,
+	}
+
+	if err := transcoder.Transcode(ctx, params); err != nil {
+		errMsg := err.Error()
 		status := internal.TranscodeJobStatus{
 			Progress: lastProgress,
 			Error:    &errMsg,
@@ -153,7 +87,7 @@ func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.Tran
 			return nil // Job completed via transaction
 		}
 
-		return fmt.Errorf("HandBrake execution failed: %w", err)
+		return fmt.Errorf("transcoding failed: %w", err)
 	}
 
 	// Record final success status
@@ -162,7 +96,7 @@ func (w *TranscodeWorker) Work(ctx context.Context, job *river.Job[internal.Tran
 	}
 	if err := river.RecordOutput(ctx, status); err != nil {
 		// Log but don't fail the job on final progress update error
-		return nil
+		log.Printf("failed to record final output: %v", err)
 	}
 
 	// Enqueue webhook job if webhook URI is configured
