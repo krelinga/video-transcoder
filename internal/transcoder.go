@@ -49,6 +49,9 @@ func getResolution(ctx context.Context, path string) (width int, height int, err
 
 	output, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return 0, 0, fmt.Errorf("failed to probe video: %w: %s", err, exitErr.Stderr)
+		}
 		return 0, 0, fmt.Errorf("failed to probe video: %w", err)
 	}
 
@@ -80,6 +83,9 @@ func getDuration(ctx context.Context, path string) (time.Duration, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return 0, fmt.Errorf("failed to probe duration: %w: %s", err, exitErr.Stderr)
+		}
 		return 0, fmt.Errorf("failed to probe duration: %w", err)
 	}
 
@@ -165,10 +171,13 @@ func (t *ffmpegTranscoder) Transcode(ctx context.Context, params TranscodeParams
 			return fmt.Errorf("failed to start ffmpeg: %w", err)
 		}
 
+		var stderrBuf strings.Builder
 		scanner := bufio.NewScanner(stderrPipe)
 		go func() {
 			for scanner.Scan() {
 				line := scanner.Text()
+				stderrBuf.WriteString(line)
+				stderrBuf.WriteString("\n")
 				if progress, ok := parseFfmpegProgress(line, totalDuration); ok {
 					params.ProgressCallback(progress * 100) // Convert to percentage
 				}
@@ -176,6 +185,9 @@ func (t *ffmpegTranscoder) Transcode(ctx context.Context, params TranscodeParams
 		}()
 
 		if err := cmd.Wait(); err != nil {
+			if stderrOutput := stderrBuf.String(); stderrOutput != "" {
+				return fmt.Errorf("ffmpeg failed: %w: %s", err, stderrOutput)
+			}
 			return fmt.Errorf("ffmpeg failed: %w", err)
 		}
 
@@ -185,7 +197,11 @@ func (t *ffmpegTranscoder) Transcode(ctx context.Context, params TranscodeParams
 		return nil
 	}
 
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg failed: %w: %s", err, output)
+	}
+	return nil
 }
 
 // handbrakeTranscoder uses HandBrakeCLI for high-quality transcoding.
@@ -212,6 +228,12 @@ func (t *handbrakeTranscoder) Transcode(ctx context.Context, params TranscodePar
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+
+	// Get stderr pipe to capture error messages
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -256,16 +278,22 @@ func (t *handbrakeTranscoder) Transcode(ctx context.Context, params TranscodePar
 				}
 
 				if progress.State == "WORKING" && params.ProgressCallback != nil {
-					params.ProgressCallback(progress.Working.Progress * 100)  // Convert to percentage
+					params.ProgressCallback(progress.Working.Progress * 100) // Convert to percentage
 				}
 			}
 		}
 	}
 
-	// Consume any remaining output
+	// Capture stderr for error reporting
+	stderrOutput, _ := io.ReadAll(stderr)
+
+	// Consume any remaining stdout
 	io.Copy(io.Discard, stdout)
 
 	if err := cmd.Wait(); err != nil {
+		if len(stderrOutput) > 0 {
+			return fmt.Errorf("HandBrake failed: %w: %s", err, stderrOutput)
+		}
 		return fmt.Errorf("HandBrake failed: %w", err)
 	}
 
