@@ -32,7 +32,7 @@ func NewTranscoder(profile Profile) Transcoder {
 	case ProfileFast1080p30:
 		return &handbrakeTranscoder{}
 	default:
-		panic(ErrPanicInvalidProfile)
+		panic(fmt.Errorf("%w: %q", ErrPanicInvalidProfile, profile))
 	}
 }
 
